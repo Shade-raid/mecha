@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mech Arena - MechJam VI</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #0a0a0a, #1a1a2e);
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #gameCanvas {
+            border: 2px solid #00ffff;
+            background: radial-gradient(circle at center, #001122, #000011);
+            box-shadow: 0 0 30px #00ffff33;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+        }
+
+        .meter {
+            width: 200px;
+            height: 20px;
+            background: #333;
+            border: 2px solid #00ffff;
+            margin: 10px 0;
+            position: relative;
+        }
+
+        .meter-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff0000, #ffff00, #00ff00);
+            transition: width 0.3s ease;
+        }
+
+        .meter-label {
+            position: absolute;
+            top: -25px;
+            left: 0;
+            font-size: 14px;
+            color: #00ffff;
+            text-shadow: 0 0 5px #00ffff;
+        }
+
+        #score {
+            font-size: 18px;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+            margin-bottom: 10px;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            font-size: 12px;
+            color: #888;
+            max-width: 300px;
+        }
+
+        .explosion {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: radial-gradient(circle, #ff6600, #ff0000, transparent);
+            border-radius: 50%;
+            animation: explode 0.5s ease-out forwards;
+            pointer-events: none;
+        }
+
+        @keyframes explode {
+            0% { transform: scale(0); opacity: 1; }
+            100% { transform: scale(3); opacity: 0; }
+        }
+
+        .footstep {
+            position: absolute;
+            width: 8px;
+            height: 12px;
+            background: #444;
+            border-radius: 2px;
+            opacity: 0.7;
+            animation: fadeOut 3s ease-out forwards;
+        }
+
+        @keyframes fadeOut {
+            0% { opacity: 0.7; }
+            100% { opacity: 0; }
+        }
+
+        #gameTitle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 200;
+        }
+
+        .title-text {
+            font-size: 48px;
+            font-weight: bold;
+            color: #00ffff;
+            text-shadow: 0 0 20px #00ffff;
+            margin-bottom: 20px;
+        }
+
+        .start-btn {
+            font-size: 20px;
+            padding: 15px 30px;
+            background: linear-gradient(45deg, #00ffff, #0088ff);
+            border: none;
+            border-radius: 5px;
+            color: #000;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .start-btn:hover {
+            background: linear-gradient(45deg, #00cccc, #0066cc);
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <div id="gameTitle">
+            <div class="title-text">MECH ARENA</div>
+            <button class="start-btn" onclick="startGame()">START MISSION</button>
+            <div style="margin-top: 20px; font-size: 14px; color: #888;">
+                A MechJam VI Entry<br>
+                Themes: Footsteps • Showing Off • Right on Target
+            </div>
+        </div>
+
+        <div id="ui" style="display: none;">
+            <div id="score">SCORE: 0</div>
+            <div class="meter">
+                <div class="meter-label">HULL INTEGRITY</div>
+                <div class="meter-fill" id="healthBar" style="width: 100%;"></div>
+            </div>
+            <div class="meter">
+                <div class="meter-label">WEAPON CHARGE</div>
+                <div class="meter-fill" id="energyBar" style="width: 100%; background: linear-gradient(90deg, #0000ff, #00ffff);"></div>
+            </div>
+        </div>
+
+        <div id="instructions">
+            <strong>CONTROLS:</strong><br>
+            WASD - Move Mech<br>
+            Mouse - Aim & Fire<br>
+            Space - Dash Boost<br>
+            <br>
+            Destroy enemies to score points!<br>
+            Leave footsteps as you move.
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let gameState = 'menu'; // menu, playing, gameOver
+        let score = 0;
+        let particles = [];
+        let enemies = [];
+        let projectiles = [];
+        let footsteps = [];
+        
+        // Player mech
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            angle: 0,
+            vx: 0,
+            vy: 0,
+            health: 100,
+            maxHealth: 100,
+            energy: 100,
+            maxEnergy: 100,
+            size: 25,
+            lastShot: 0,
+            lastFootstep: 0,
+            dashCooldown: 0
+        };
+
+        // Game state
+        let keys = {};
+        let mouse = { x: 0, y: 0, down: false };
+        let lastTime = 0;
+
+        // Input handling
+        document.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (gameState === 'playing' && player.dashCooldown <= 0) {
+                    // Dash boost
+                    const dashForce = 15;
+                    player.vx += Math.cos(player.angle) * dashForce;
+                    player.vy += Math.sin(player.angle) * dashForce;
+                    player.dashCooldown = 1000; // 1 second cooldown
+                    player.energy = Math.max(0, player.energy - 20);
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            mouse.down = true;
+            if (gameState === 'playing') {
+                shoot();
+            }
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            mouse.down = false;
+        });
+
+        function startGame() {
+            gameState = 'playing';
+            document.getElementById('gameTitle').style.display = 'none';
+            document.getElementById('ui').style.display = 'block';
+            spawnEnemies();
+        }
+
+        function shoot() {
+            const now = Date.now();
+            if (now - player.lastShot > 150 && player.energy > 10) { // Fire rate limit
+                const projectile = {
+                    x: player.x + Math.cos(player.angle) * player.size,
+                    y: player.y + Math.sin(player.angle) * player.size,
+                    vx: Math.cos(player.angle) * 12,
+                    vy: Math.sin(player.angle) * 12,
+                    life: 60,
+                    size: 3
+                };
+                projectiles.push(projectile);
+                player.lastShot = now;
+                player.energy = Math.max(0, player.energy - 10);
+                
+                // Recoil
+                player.vx -= Math.cos(player.angle) * 2;
+                player.vy -= Math.sin(player.angle) * 2;
+            }
+        }
+
+        function spawnEnemies() {
+            for (let i = 0; i < 5; i++) {
+                spawnEnemy();
+            }
+        }
+
+        function spawnEnemy() {
+            const side = Math.floor(Math.random() * 4);
+            let x, y;
+            
+            switch(side) {
+                case 0: x = Math.random() * canvas.width; y = -30; break;
+                case 1: x = canvas.width + 30; y = Math.random() * canvas.height; break;
+                case 2: x = Math.random() * canvas.width; y = canvas.height + 30; break;
+                case 3: x = -30; y = Math.random() * canvas.height; break;
+            }
+            
+            enemies.push({
+                x: x,
+                y: y,
+                vx: 0,
+                vy: 0,
+                angle: 0,
+                health: 50,
+                maxHealth: 50,
+                size: 20,
+                color: `hsl(${Math.random() * 60 + 300}, 70%, 50%)`,
+                lastShot: 0,
+                type: Math.random() > 0.7 ? 'heavy' : 'light'
+            });
+        }
+
+        function updatePlayer() {
+            // Movement
+            const speed = 0.3;
+            const friction = 0.92;
+            
+            if (keys['KeyW']) player.vy -= speed;
+            if (keys['KeyS']) player.vy += speed;
+            if (keys['KeyA']) player.vx -= speed;
+            if (keys['KeyD']) player.vx += speed;
+            
+            // Apply friction
+            player.vx *= friction;
+            player.vy *= friction;
+            
+            // Update position
+            player.x += player.vx;
+            player.y += player.vy;
+            
+            // Keep in bounds
+            player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
+            player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
+            
+            // Aim at mouse
+            player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+            
+            // Auto-fire when mouse is down
+            if (mouse.down) {
+                shoot();
+            }
+            
+            // Regenerate energy
+            player.energy = Math.min(player.maxEnergy, player.energy + 0.5);
+            
+            // Reduce dash cooldown
+            if (player.dashCooldown > 0) {
+                player.dashCooldown = Math.max(0, player.dashCooldown - 16);
+            }
+            
+            // Create footsteps
+            const now = Date.now();
+            if (now - player.lastFootstep > 200 && (Math.abs(player.vx) > 0.5 || Math.abs(player.vy) > 0.5)) {
+                footsteps.push({
+                    x: player.x + (Math.random() - 0.5) * player.size,
+                    y: player.y + (Math.random() - 0.5) * player.size,
+                    life: 180,
+                    maxLife: 180
+                });
+                player.lastFootstep = now;
+            }
+        }
+
+        function updateEnemies() {
+            enemies.forEach((enemy, enemyIndex) => {
+                // AI movement towards player
+                const dx = player.x - enemy.x;
+                const dy = player.y - enemy.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                if (dist > 0) {
+                    const speed = enemy.type === 'heavy' ? 0.8 : 1.2;
+                    enemy.vx += (dx / dist) * speed * 0.02;
+                    enemy.vy += (dy / dist) * speed * 0.02;
+                }
+                
+                // Apply friction and update position
+                enemy.vx *= 0.95;
+                enemy.vy *= 0.95;
+                enemy.x += enemy.vx;
+                enemy.y += enemy.vy;
+                
+                // Aim at player
+                enemy.angle = Math.atan2(dy, dx);
+                
+                // Enemy shooting
+                const now = Date.now();
+                if (dist < 200 && now - enemy.lastShot > (enemy.type === 'heavy' ? 800 : 1200)) {
+                    const projectile = {
+                        x: enemy.x + Math.cos(enemy.angle) * enemy.size,
+                        y: enemy.y + Math.sin(enemy.angle) * enemy.size,
+                        vx: Math.cos(enemy.angle) * 6,
+                        vy: Math.sin(enemy.angle) * 6,
+                        life: 60,
+                        size: 2,
+                        enemy: true
+                    };
+                    projectiles.push(projectile);
+                    enemy.lastShot = now;
+                }
+            });
+        }
+
+        function updateProjectiles() {
+            projectiles.forEach((proj, projIndex) => {
+                proj.x += proj.vx;
+                proj.y += proj.vy;
+                proj.life--;
+                
+                // Remove if out of bounds or life expired
+                if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height || proj.life <= 0) {
+                    projectiles.splice(projIndex, 1);
+                    return;
+                }
+                
+                // Check collisions
+                if (proj.enemy) {
+                    // Enemy projectile hitting player
+                    const dx = proj.x - player.x;
+                    const dy = proj.y - player.y;
+                    if (Math.sqrt(dx * dx + dy * dy) < player.size + proj.size) {
+                        player.health = Math.max(0, player.health - 15);
+                        projectiles.splice(projIndex, 1);
+                        createExplosion(proj.x, proj.y, '#ff4444');
+                    }
+                } else {
+                    // Player projectile hitting enemies
+                    enemies.forEach((enemy, enemyIndex) => {
+                        const dx = proj.x - enemy.x;
+                        const dy = proj.y - enemy.y;
+                        if (Math.sqrt(dx * dx + dy * dy) < enemy.size + proj.size) {
+                            enemy.health -= 25;
+                            projectiles.splice(projIndex, 1);
+                            createExplosion(proj.x, proj.y, '#44ff44');
+                            
+                            if (enemy.health <= 0) {
+                                score += enemy.type === 'heavy' ? 150 : 100;
+                                enemies.splice(enemyIndex, 1);
+                                createExplosion(enemy.x, enemy.y, '#ffff44');
+                                
+                                // Spawn new enemy to keep the action going
+                                if (Math.random() > 0.3) {
+                                    spawnEnemy();
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
+        function updateFootsteps() {
+            footsteps.forEach((footstep, index) => {
+                footstep.life--;
+                if (footstep.life <= 0) {
+                    footsteps.splice(index, 1);
+                }
+            });
+        }
+
+        function createExplosion(x, y, color) {
+            for (let i = 0; i < 8; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 8,
+                    life: 30,
+                    maxLife: 30,
+                    color: color
+                });
+            }
+        }
+
+        function updateParticles() {
+            particles.forEach((particle, index) => {
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                particle.vx *= 0.95;
+                particle.vy *= 0.95;
+                particle.life--;
+                
+                if (particle.life <= 0) {
+                    particles.splice(index, 1);
+                }
+            });
+        }
+
+        function drawMech(x, y, angle, size, color, health, maxHealth) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+            
+            // Body
+            ctx.fillStyle = color;
+            ctx.fillRect(-size * 0.8, -size * 0.6, size * 1.6, size * 1.2);
+            
+            // Weapon
+            ctx.fillStyle = '#888';
+            ctx.fillRect(size * 0.8, -size * 0.2, size * 0.8, size * 0.4);
+            
+            // Legs
+            ctx.fillStyle = color;
+            ctx.fillRect(-size * 0.4, size * 0.6, size * 0.3, size * 0.6);
+            ctx.fillRect(size * 0.1, size * 0.6, size * 0.3, size * 0.6);
+            
+            // Cockpit
+            ctx.fillStyle = '#00ffff';
+            ctx.fillRect(-size * 0.3, -size * 0.3, size * 0.6, size * 0.3);
+            
+            ctx.restore();
+            
+            // Health bar
+            if (health < maxHealth) {
+                const barWidth = size * 2;
+                const barHeight = 4;
+                ctx.fillStyle = '#ff0000';
+                ctx.fillRect(x - barWidth/2, y - size - 10, barWidth, barHeight);
+                ctx.fillStyle = '#00ff00';
+                ctx.fillRect(x - barWidth/2, y - size - 10, barWidth * (health / maxHealth), barHeight);
+            }
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw footsteps
+            footsteps.forEach(footstep => {
+                const alpha = footstep.life / footstep.maxLife;
+                ctx.fillStyle = `rgba(100, 100, 100, ${alpha * 0.5})`;
+                ctx.fillRect(footstep.x - 3, footstep.y - 4, 6, 8);
+            });
+            
+            // Draw player mech
+            drawMech(player.x, player.y, player.angle, player.size, '#00aaff', player.health, player.maxHealth);
+            
+            // Draw enemies
+            enemies.forEach(enemy => {
+                drawMech(enemy.x, enemy.y, enemy.angle, enemy.size, enemy.color, enemy.health, enemy.maxHealth);
+            });
+            
+            // Draw projectiles
+            projectiles.forEach(proj => {
+                ctx.fillStyle = proj.enemy ? '#ff4444' : '#44ff44';
+                ctx.beginPath();
+                ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Draw particles
+            particles.forEach(particle => {
+                const alpha = particle.life / particle.maxLife;
+                ctx.fillStyle = particle.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Update UI
+            document.getElementById('score').textContent = `SCORE: ${score}`;
+            document.getElementById('healthBar').style.width = `${(player.health / player.maxHealth) * 100}%`;
+            document.getElementById('energyBar').style.width = `${(player.energy / player.maxEnergy) * 100}%`;
+        }
+
+        function gameLoop() {
+            if (gameState === 'playing') {
+                updatePlayer();
+                updateEnemies();
+                updateProjectiles();
+                updateFootsteps();
+                updateParticles();
+                
+                // Check game over
+                if (player.health <= 0) {
+                    gameState = 'gameOver';
+                    alert(`Game Over! Final Score: ${score}`);
+                    location.reload();
+                }
+            }
+            
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game loop
+        gameLoop();
+    </script>
+</body>
+</html>

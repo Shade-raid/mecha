@@ -2,7 +2,7 @@
 
 **MECH ARENA** is a fast-paced 2D tactical shooter where you pilot a customizable mech in an endless combat arena. Inspired by retro arcade aesthetics and built entirely in vanilla HTML5, CSS, and JavaScript, this game is a tribute to the glory of glowing screens and twitch reflexes.
 
-![screenshot](preview.png) <!-- Optional: add a screenshot of gameplay -->
+
 
 ## 🎮 Gameplay
 
@@ -39,14 +39,6 @@ No libraries. No engines. Just code.
 ## 📁 How to Run
 
 Simply open `index.html` in your browser!
-
-Or play it online at:  
-👉 [https://yourusername.itch.io/mech-arena](https://yourusername.itch.io/mech-arena)
-
-## 🧠 Credits
-
-**Developer & Designer:** *Your Name Here*  
-Made for [MechJam VI](https://itch.io/jam/mechjam-vi)
 
 ---
 
